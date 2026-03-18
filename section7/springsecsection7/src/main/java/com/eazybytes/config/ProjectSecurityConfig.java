@@ -1,5 +1,8 @@
 package com.eazybytes.config;
 
+import com.eazybytes.exceptionhandling.CustomAccessDeniedHandler;
+import com.eazybytes.exceptionhandling.CustomBasicAuthenticationEntryPoint;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -18,13 +21,28 @@ public class ProjectSecurityConfig {
 
     @Bean
     SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) {
-        http.redirectToHttps(redconf -> redconf.disable()) // only HTTP
+        http.sessionManagement(smc -> smc.invalidSessionUrl("/invalidSession")
+                        .maximumSessions(1).maxSessionsPreventsLogin(true))
+                .redirectToHttps(redconf -> redconf.disable()) // only HTTP
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests((requests) -> requests
                 .requestMatchers("/myAccount", "/myBalance", "/myCards", "/myLoans").authenticated()
                 .requestMatchers("/contact", "/notices", "/register", "/error").permitAll());
-        http.formLogin(withDefaults() );
-        http.httpBasic(withDefaults());
+
+        http.formLogin(form -> form
+                .failureHandler(((request, response, exception) -> {
+                    if(exception.getMessage().contains("Maximum sessions")) {
+                        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                        response.getWriter().write("Maximum session of 1 for this user already exceeded");
+                    }
+                    else {
+                        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                        response.getWriter().write("Authentication failed");
+                    }
+                })));
+
+        http.httpBasic(hbc -> hbc.authenticationEntryPoint(new CustomBasicAuthenticationEntryPoint()));
+        http.exceptionHandling(ehc -> ehc.accessDeniedHandler(new CustomAccessDeniedHandler()));
         return http.build();
     }
 
